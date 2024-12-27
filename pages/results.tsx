@@ -1,97 +1,114 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import dynamic from 'next/dynamic';
 import styles from '../styles/Results.module.css';
-import { routes } from '../utils/config';
+
+// Dynamic import of Chart.js component
+const Line = dynamic(() => import('react-chartjs-2').then(mod => mod.Line), { ssr: false });
 
 export default function Results() {
   const router = useRouter();
-  const [advice, setAdvice] = useState<string[]>([]);
-  const [revealed, setRevealed] = useState<boolean[]>([]);
+  interface Prediction {
+    actual: number;
+    predicted: number;
+  }
+
+  interface Predictions {
+    symbol: string;
+    current_price: number;
+    next_day_prediction: number;
+    mse: number;
+    last_predictions: Prediction[];
+  }
+
+  const [predictions, setPredictions] = useState<Predictions | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    const loadAdvice = () => {
-      try {
-        const storedAdvice = sessionStorage.getItem('financialAdvice');
-        if (!storedAdvice) {
-          router.replace('/');
-          return;
-        }
-
-        const parsedAdvice = JSON.parse(storedAdvice);
-        if (!Array.isArray(parsedAdvice) || parsedAdvice.length === 0) {
-          router.replace('/');
-          return;
-        }
-
-        setAdvice(parsedAdvice);
-        setRevealed(new Array(parsedAdvice.length).fill(false));
-      } catch (error) {
-        console.error('Error loading advice:', error);
+    const loadPredictions = () => {
+      const stored = sessionStorage.getItem('stockPredictions');
+      if (!stored) {
         router.replace('/');
+        return;
+      }
+
+      try {
+        const data = JSON.parse(stored);
+        setPredictions(data);
+      } catch (err) {
+        setError('Failed to load predictions');
+        console.error(err);
       } finally {
         setLoading(false);
       }
     };
 
-    if (typeof window !== 'undefined') {
-      loadAdvice();
-    }
+    loadPredictions();
   }, [router]);
 
-  // Prevent flash of empty content
-  if (typeof window === 'undefined' || loading) {
-    return (
-      <div className={styles.container}>
-        <h1>Preparing Your Financial Roadmap...</h1>
-        <div className={styles.loader}></div>
-      </div>
-    );
+  if (loading) {
+    return <div className={styles.container}>Loading predictions...</div>;
   }
 
-  // If no advice is available, redirect
-  if (!advice.length) {
-    return null;
+  if (error || !predictions) {
+    return <div className={styles.container}>Error: {error}</div>;
   }
 
-  const handleReveal = (index: number) => {
-    const newRevealed = [...revealed];
-    newRevealed[index] = true;
-    setRevealed(newRevealed);
+  const chartData = {
+    labels: predictions.last_predictions.map((_, i) => `Day ${i + 1}`),
+    datasets: [
+      {
+        label: 'Actual Prices',
+        data: predictions.last_predictions.map(p => p.actual),
+        borderColor: 'rgb(75, 192, 192)',
+        tension: 0.1
+      },
+      {
+        label: 'Predicted Prices',
+        data: predictions.last_predictions.map(p => p.predicted),
+        borderColor: 'rgb(255, 99, 132)',
+        tension: 0.1
+      }
+    ]
   };
 
   return (
     <div className={styles.container}>
-      <h1>Your Financial Roadmap</h1>
-      <div className={styles.adviceGrid}>
-        {advice.map((item, index) => (
-          <div 
-            key={index}
-            className={`${styles.adviceCard} ${revealed[index] ? styles.revealed : ''}`}
-            onClick={() => handleReveal(index)}
-          >
-            {revealed[index] ? (
-              <>
-                <h3>Strategy {index + 1}</h3>
-                <p>{item}</p>
-              </>
-            ) : (
-              <div className={styles.cardFront}>
-                <h3>Tap to Reveal</h3>
-                <p>Strategy {index + 1}</p>
-              </div>
-            )}
-          </div>
-        ))}
+      <h1>Stock Predictions for {predictions.symbol}</h1>
+      
+      <div className={styles.statsGrid}>
+        <div className={styles.statCard}>
+          <h3>Current Price</h3>
+          <p>${predictions.current_price.toFixed(2)}</p>
+        </div>
+        <div className={styles.statCard}>
+          <h3>Next Day Prediction</h3>
+          <p>${predictions.next_day_prediction.toFixed(2)}</p>
+        </div>
+        <div className={styles.statCard}>
+          <h3>Model Accuracy (MSE)</h3>
+          <p>{predictions.mse.toFixed(4)}</p>
+        </div>
       </div>
+
+      <div className={styles.chartContainer}>
+        <Line data={chartData} options={{
+          responsive: true,
+          plugins: {
+            title: {
+              display: true,
+              text: 'Price Predictions vs Actual'
+            }
+          }
+        }} />
+      </div>
+
       <button 
-        onClick={() => {
-          sessionStorage.clear();
-          router.push(routes.home);
-        }} 
-        className={styles.resetButton}
+        onClick={() => router.push('/')}
+        className={styles.button}
       >
-        Take Quiz Again
+        Make Another Prediction
       </button>
     </div>
   );

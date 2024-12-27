@@ -1,207 +1,129 @@
 import { useState } from "react";
 import { useRouter } from "next/router";
-import React from "react";
 import styles from "../styles/Home.module.css";
-import { getBaseUrl, routes } from '../utils/config';
 
 export default function Home() {
   const router = useRouter();
-  const [currentStep, setCurrentStep] = useState(0);
-  const [advice, setAdvice] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  interface SearchResult {
+    symbol: string;
+    name: string;
+  }
+
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [formData, setFormData] = useState({
-    age: "",
-    income: "",
-    savings: "",
-    debt: "",
-    expenses: "",
-    investmentRisk: "",
-    financialGoals: "",
-    dependents: "",
+    symbol: "",
+    period: "2y",
   });
-  const [error, setError] = useState<string>("");
 
-  const questions = [
-    { key: "age", label: "What is your age?", type: "number" },
-    { key: "income", label: "What is your monthly income?", type: "number" },
-    {
-      key: "savings",
-      label: "How much do you have in savings?",
-      type: "number",
-    },
-    { key: "debt", label: "What is your total debt?", type: "number" },
-    {
-      key: "expenses",
-      label: "What are your monthly expenses?",
-      type: "number",
-    },
-    {
-      key: "investmentRisk",
-      label:
-        "On a scale of 1-10, how comfortable are you with investment risk?",
-      type: "number",
-    },
-    {
-      key: "dependents",
-      label: "How many dependents do you have?",
-      type: "number",
-    },
-  ];
-
-  const validateForm = () => {
-    const requiredFields = ['age', 'income', 'savings', 'debt', 'expenses', 'investmentRisk', 'dependents'];
-    
-    for (const field of requiredFields) {
-      const value = formData[field];
-      if (!value || value.toString().trim() === '') {
-        setError(`Please fill in ${field}`);
-        return false;
-      }
-      
-      const numValue = parseFloat(value);
-      if (isNaN(numValue) || numValue < 0) {
-        setError(`Please enter a valid number for ${field}`);
-        return false;
-      }
-    }
-    setError("");
-    return true;
-  };
-
-  const validateInput = (value: string) => {
-    if (!value || value.trim() === '') return false;
-    const num = parseFloat(value);
-    return !isNaN(num) && num >= 0;
-  };
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value.trim();
-    if (value === '' || (!isNaN(parseFloat(value)) && parseFloat(value) >= 0)) {
-      setFormData({ ...formData, [e.target.name]: value });
-      setError("");
-    }
-  };
-
-  const handleNext = (e: React.MouseEvent) => {
-    e.preventDefault();
-    const currentValue = formData[questions[currentStep].key];
-    
-    if (!validateInput(currentValue)) {
-      setError("Please enter a valid number before proceeding");
+  const handleSearch = async (query: string) => {
+    if (query.length < 2) {
+      setSearchResults([]);
       return;
     }
 
-    setError("");
-    setCurrentStep(currentStep + 1);
+    try {
+      const response = await fetch(`/api/search-stocks?query=${query}`);
+      const data = await response.json();
+      setSearchResults(data.results);
+    } catch (error) {
+      console.error('Search failed:', error);
+    }
   };
 
-  const handleSubmit = async (e: React.MouseEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!validateForm()) {
+    if (!formData.symbol) {
+      setError("Please select a stock symbol");
       return;
     }
-    
+
     setLoading(true);
     setError("");
 
     try {
-      const baseUrl = getBaseUrl();
-      const response = await fetch(`${baseUrl}${routes.api.getAdvice}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          age: parseFloat(formData.age),
-          income: parseFloat(formData.income),
-          savings: parseFloat(formData.savings),
-          debt: parseFloat(formData.debt),
-          expenses: parseFloat(formData.expenses),
-          investmentRisk: parseFloat(formData.investmentRisk),
-          dependents: parseFloat(formData.dependents),
-        })
+      const response = await fetch('/api/stock-predict', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
       });
 
       if (!response.ok) {
-        throw new Error('Failed to get financial advice');
+        throw new Error('Prediction failed');
       }
 
-      const result = await response.json();
-      
-      if (!result.advice || !Array.isArray(result.advice)) {
-        throw new Error('Invalid response format');
-      }
-
-      sessionStorage.setItem('financialAdvice', JSON.stringify(result.advice));
-      router.push(routes.results);
+      const data = await response.json();
+      sessionStorage.setItem('stockPredictions', JSON.stringify(data));
+      router.push('/results');
     } catch (error) {
-      setError("Failed to get advice. Please try again.");
-      console.error("Error:", error);
+      setError(error.message);
     } finally {
       setLoading(false);
     }
   };
 
-  // Show loading state
   if (loading) {
     return (
       <div className={styles.container}>
-        <h1>Analyzing your financial situation...</h1>
-        <div className={styles.progressBar}>
-          <div className={styles.progressFill} style={{ width: '80%' }} />
-        </div>
+        <h1>Analyzing Stock Data...</h1>
+        <div className={styles.loader}></div>
       </div>
     );
   }
 
-  // Show results
-  if (currentStep > questions.length && advice.length > 0) {
-    return (
-      <div className={styles.container}>
-        <h1>Your Financial Recommendations</h1>
-        <div className={styles.adviceContainer}>
-          {advice.map((item, index) => (
-            <div key={index} className={styles.adviceCard}>
-              <h3>Recommendation {index + 1}</h3>
-              <p>{item}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  // Show quiz
   return (
     <div className={styles.container}>
-      <h1>Financial Advisory Quiz</h1>
-      {currentStep < questions.length ? (
-        <div className={styles.questionCard}>
-          <h2>{questions[currentStep].label}</h2>
+      <h1>Stock Market Predictor</h1>
+      <form onSubmit={handleSubmit} className={styles.form}>
+        <div className={styles.searchContainer}>
           <input
-            type={questions[currentStep].type}
-            name={questions[currentStep].key}
-            value={formData[questions[currentStep].key]}
-            onChange={handleInputChange}
-            required
-            min="0"
-            className={styles.input}
+            type="text"
+            placeholder="Search for companies..."
+            value={searchTerm}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              handleSearch(e.target.value);
+            }}
+            className={styles.searchInput}
           />
-          {error && <p className={styles.error}>{error}</p>}
-          {currentStep < questions.length - 1 ? (
-            <button
-              onClick={handleNext}
-              className={styles.button}
-              disabled={!validateInput(formData[questions[currentStep].key])}
-            >
-              Next
-            </button>
-          ) : (
-            <button onClick={handleSubmit} className={styles.submitButton}>
-              Get Financial Advice
-            </button>
+          {searchResults.length > 0 && (
+            <div className={styles.searchResults}>
+              {searchResults.map((result) => (
+                <div
+                  key={result.symbol}
+                  className={styles.searchItem}
+                  onClick={() => {
+                    setFormData({ ...formData, symbol: result.symbol });
+                    setSearchTerm(result.name);
+                    setSearchResults([]);
+                  }}
+                >
+                  <strong>{result.symbol}</strong> - {result.name}
+                </div>
+              ))}
+            </div>
           )}
         </div>
-      ) : null}
+
+        <select 
+          value={formData.period} 
+          onChange={(e) => setFormData({ ...formData, period: e.target.value })}
+          className={styles.select}
+        >
+          <option value="1mo">1 Month</option>
+          <option value="6mo">6 Months</option>
+          <option value="1y">1 Year</option>
+          <option value="2y">2 Years</option>
+        </select>
+
+        {error && <p className={styles.error}>{error}</p>}
+        
+        <button type="submit" className={styles.button}>
+          Predict Stock Trends
+        </button>
+      </form>
     </div>
   );
 }

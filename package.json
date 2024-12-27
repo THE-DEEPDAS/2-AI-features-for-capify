@@ -9,10 +9,13 @@
     "vercel-build": "next build"
   },
   "dependencies": {
+    "chart.js": "^4.4.7",
     "next": "13.5.4",
     "python-shell": "^3.0.1",
     "react": "18.2.0",
-    "react-dom": "18.2.0"
+    "react-chartjs-2": "^5.2.0",
+    "react-dom": "18.2.0",
+    "yahoo-finance2": "^2.13.3"
   },
   "devDependencies": {
     "@types/node": "^20.8.2",
